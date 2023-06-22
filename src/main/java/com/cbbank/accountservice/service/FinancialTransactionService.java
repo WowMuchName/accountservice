@@ -63,11 +63,11 @@ public class FinancialTransactionService { // TODO Stuffing everything into one 
     @Transactional
     public FinancialTransaction makeTransaction(String accountId, CreateTransaction createTransaction) {
         var account = accountRepo.findById(accountId).orElseThrow(EntityNotFoundException::new);
-        var incoming = validateAndDecideIfIncoming(account, createTransaction);
 
         validateCurrency(createTransaction, account);
         validateIBANs(createTransaction);
 
+        var incoming = validateAndDecideIfIncoming(account, createTransaction);
         var nonce = account.getNonceTokens().stream().filter(n -> n.getId().equals(createTransaction.getNonce()))
                 .findFirst().orElseThrow(NonceInvalidException::new);
         nonceRepo.delete(nonce);

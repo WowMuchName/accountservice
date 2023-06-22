@@ -16,6 +16,7 @@ import com.github.database.rider.junit5.api.DBRider;
 import io.restassured.RestAssured;
 import io.restassured.response.ValidatableResponse;
 import lombok.SneakyThrows;
+import lombok.val;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.zalando.problem.Problem;
 
 import java.util.List;
 
@@ -126,6 +128,22 @@ class AccountIT {
 
     @Test
     @SneakyThrows
+    @DisplayName("Should be able to receive transaction")
+    void testReceive() {
+        var transaction = makeAndVerifyAValidTransaction(STARTING_BALANCE * 3, TEST_IBAN_2, TEST_IBAN_1);
+
+        var account = getAccountRepresentation();
+        assertThat(account.getBalance()).isEqualTo(STARTING_BALANCE * 4);
+        assertThat(account.getCreditLimit()).isEqualTo(STARTING_BALANCE * 4 + STARTING_OVERCHARGE);
+
+        var transactions = getTransactionList();
+        assertThat(transactions).hasSize(1);
+        assertThat(transactions.get(0)).isEqualTo(transaction);
+    }
+
+
+    @Test
+    @SneakyThrows
     @DisplayName("Should not be to use the same nonce twice")
     void testDupeNonce() {
         var nonce = getNonce();
@@ -146,12 +164,13 @@ class AccountIT {
                 .statusCode(200);
 
         // Fail the second time
-        RestAssured.given()
+        var problem = RestAssured.given()
                 .contentType(CreateTransaction.CREATE_TRANSACTION_MIME)
                 .body(createTransaction)
                 .put("/account/1/transaction")
                 .then()
-                .statusCode(409);
+                .statusCode(409)
+                .extract().body().as(Problem.class);
 
         // Verify that nothing was written twice
         Account account = getAccount();
@@ -215,9 +234,18 @@ class AccountIT {
     @Test
     @DisplayName("Should not be able to submit invalid transactions")
     void testInvalidTransaction() {
-        makeTransaction(1L, " ", TEST_IBAN_2).statusCode(400);
-        makeTransaction(1L, TEST_IBAN_1, " ").statusCode(400);
-        makeTransaction(-1L, TEST_IBAN_1, TEST_IBAN_2).statusCode(400);
+        var problem = makeTransaction(1L, " ", TEST_IBAN_2).statusCode(400).extract().body()
+                .as(Problem.class);
+        assertThat(problem.getType().toASCIIString())
+                .isEqualTo("https://zalando.github.io/problem/constraint-violation");
+        problem = makeTransaction(1L, TEST_IBAN_1, " ").statusCode(400).extract().body()
+                .as(Problem.class);
+        assertThat(problem.getType().toASCIIString())
+                .isEqualTo("https://zalando.github.io/problem/constraint-violation");
+        problem = makeTransaction(-1L, TEST_IBAN_1, TEST_IBAN_2).statusCode(400).extract().body()
+                .as(Problem.class);
+        assertThat(problem.getType().toASCIIString())
+                .isEqualTo("https://zalando.github.io/problem/constraint-violation");
         verifyInvalidTransactionsHadNoEffect();
     }
 
@@ -231,7 +259,9 @@ class AccountIT {
     @Test
     @DisplayName("Should not be able to user invalid ibans")
     void testInvalidIbans() {
-        makeTransaction(1L, "DE123", TEST_IBAN_2).statusCode(400);
+        var problem = makeTransaction(1L, "DE123", TEST_IBAN_2).statusCode(400).extract().body()
+                .as(Problem.class);
+        assertThat(problem.getType().toASCIIString()).isEqualTo("urn::com.cbbank.accountservice.invalid-iban");
         makeTransaction(1L, TEST_IBAN_1, "DE123").statusCode(400);
         verifyInvalidTransactionsHadNoEffect();
     }
@@ -268,8 +298,7 @@ class AccountIT {
                         .targetIban(targetIban)
                         .currency(Currency.EURO)
                         .nonce(nonce.getId())
-                        .build()
-                     )
+                        .build())
                 .put("/account/1/transaction")
                 .then();
     }
