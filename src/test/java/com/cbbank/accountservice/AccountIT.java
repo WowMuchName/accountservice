@@ -9,6 +9,7 @@ import com.cbbank.accountservice.entity.Account;
 import com.cbbank.accountservice.repo.AccountRepo;
 import com.cbbank.accountservice.repo.FinancialTransactionRepo;
 import com.cbbank.accountservice.repo.NonceTokenRepo;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.database.rider.junit5.api.DBRider;
@@ -101,15 +102,19 @@ class AccountIT {
     void testTransactionList() {
         var transaction1 = makeAndVerifyAValidTransaction();
         var transaction2 = makeAndVerifyAValidTransaction();
-        var list = RestAssured.get("/account/1/transaction")
+        var genericList = getTransactionList();
+        assertThat(genericList.get(0)).isEqualTo(transaction1);
+        assertThat(genericList.get(1)).isEqualTo(transaction2);
+    }
+
+    @SneakyThrows
+    private List<TransactionRepresentation> getTransactionList() {
+        return mapper.readValue(RestAssured.get("/account/1/transaction")
                 .then()
                 .statusCode(200)
                 .contentType(TransactionRepresentation.TRANSACTION_LIST_MIME)
-                .extract().body().asString();
-        var genericList = mapper.readValue(list, new TypeReference<List<TransactionRepresentation>>() {
+                .extract().body().asString(), new TypeReference<List<TransactionRepresentation>>() {
         });
-        assertThat(genericList.get(0)).isEqualTo(transaction1);
-        assertThat(genericList.get(1)).isEqualTo(transaction2);
     }
 
     @Test
@@ -198,7 +203,6 @@ class AccountIT {
                 .statusCode(400);
     }
 
-
     @Test
     @DisplayName("Should be able to overcharge within limit")
     void testOverchargeWithinLimit() {
@@ -207,6 +211,31 @@ class AccountIT {
         assertThat(account.getBalance()).isEqualTo(-STARTING_OVERCHARGE);
         assertThat(account.getCreditLimit()).isZero();
     }
+
+    @Test
+    @DisplayName("Should not be able to submit invalid transactions")
+    void testInvalidTransaction() {
+        makeTransaction(1L, " ", TEST_IBAN_2).statusCode(400);
+        makeTransaction(1L, TEST_IBAN_1, " ").statusCode(400);
+        makeTransaction(-1L, TEST_IBAN_1, TEST_IBAN_2).statusCode(400);
+        verifyInvalidTransactionsHadNoEffect();
+    }
+
+    private void verifyInvalidTransactionsHadNoEffect() {
+        assertThat(getTransactionList()).describedAs("should not save invalid transactions").isEmpty();
+        assertThat(getAccountRepresentation().getBalance())
+                .describedAs("should not apply balance with invalid transactions")
+                .isEqualTo(STARTING_BALANCE);
+    }
+
+    @Test
+    @DisplayName("Should not be able to user invalid ibans")
+    void testInvalidIbans() {
+        makeTransaction(1L, "DE123", TEST_IBAN_2).statusCode(400);
+        makeTransaction(1L, TEST_IBAN_1, "DE123").statusCode(400);
+        verifyInvalidTransactionsHadNoEffect();
+    }
+
 
     private static TransactionRepresentation makeAndVerifyAValidTransaction() {
         return makeAndVerifyAValidTransaction(1000L, TEST_IBAN_1, TEST_IBAN_2);

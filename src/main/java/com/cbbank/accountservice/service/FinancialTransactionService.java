@@ -6,6 +6,7 @@ import com.cbbank.accountservice.entity.FinancialTransaction;
 import com.cbbank.accountservice.entity.NonceToken;
 import com.cbbank.accountservice.exceptions.AccountOverchargeException;
 import com.cbbank.accountservice.exceptions.EntityNotFoundException;
+import com.cbbank.accountservice.exceptions.InvalidIbanException;
 import com.cbbank.accountservice.exceptions.NonceInvalidException;
 import com.cbbank.accountservice.exceptions.NoopTransactionException;
 import com.cbbank.accountservice.exceptions.UnrelatedAccountException;
@@ -13,6 +14,8 @@ import com.cbbank.accountservice.exceptions.UnsupportedCurrencyException;
 import com.cbbank.accountservice.repo.AccountRepo;
 import com.cbbank.accountservice.repo.FinancialTransactionRepo;
 import com.cbbank.accountservice.repo.NonceTokenRepo;
+import fr.marcwrobel.jbanking.iban.Iban;
+import jakarta.transaction.Transactional;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -47,13 +50,23 @@ public class FinancialTransactionService { // TODO Stuffing everything into one 
         return true;
     }
 
-    public FinancialTransaction makeTransaction(String accountId, CreateTransaction createTransaction) {
-        // TODO Transaction
+    private void validateIBANs(CreateTransaction createTransaction) {
+        if (!Iban.isValid(createTransaction.getSourceIban())) {
+            throw new InvalidIbanException();
+        }
+        if (!Iban.isValid(createTransaction.getTargetIban())) {
+            throw new InvalidIbanException();
+        }
+    }
 
+    // TODO Write transaction test
+    @Transactional
+    public FinancialTransaction makeTransaction(String accountId, CreateTransaction createTransaction) {
         var account = accountRepo.findById(accountId).orElseThrow(EntityNotFoundException::new);
         var incoming = validateAndDecideIfIncoming(account, createTransaction);
 
         validateCurrency(createTransaction, account);
+        validateIBANs(createTransaction);
 
         var nonce = account.getNonceTokens().stream().filter(n -> n.getId().equals(createTransaction.getNonce()))
                 .findFirst().orElseThrow(NonceInvalidException::new);

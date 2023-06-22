@@ -8,6 +8,7 @@ import com.cbbank.accountservice.entity.FinancialTransaction;
 import com.cbbank.accountservice.exceptions.EntityNotFoundException;
 import com.cbbank.accountservice.service.AccountService;
 import com.cbbank.accountservice.service.FinancialTransactionService;
+import jakarta.validation.Valid;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -61,7 +62,7 @@ public class AccountController {
             consumes = CreateTransaction.CREATE_TRANSACTION_MIME
     )
     public TransactionRepresentation putTransaction(@PathVariable("id") String id,
-                                                    @RequestBody CreateTransaction createTransaction) {
+                                                    @Valid @RequestBody CreateTransaction createTransaction) {
         return TransactionRepresentation.builder().from(transactionService.makeTransaction(
                 id,
                 createTransaction)).build();
